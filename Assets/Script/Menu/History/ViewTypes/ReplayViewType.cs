@@ -1,7 +1,7 @@
 ﻿using Cysharp.Threading.Tasks;
 using UnityEngine;
 using YARG.Core.Song;
-using YARG.Helpers;
+using YARG.Localization;
 using YARG.Menu.Persistent;
 using YARG.Replays;
 using YARG.Settings;
@@ -37,12 +37,12 @@ namespace YARG.Menu.History
             return FormatAs(_replayEntry.ArtistName, TextType.Secondary, selected);
         }
 
-        public override async UniTask<Sprite> GetIcon()
+#nullable enable
+        public override Sprite? GetIcon()
+#nullable disable
         {
-            // TODO: Show "song missing" icon instead
-            if (_songEntry is null) return null;
-
-            return await SongSources.SourceToIcon(_songEntry.Source);
+            // TODO: Show "song missing" icon instead when _songEntry is null
+            return _songEntry != null ? SongSources.SourceToIcon(_songEntry.Source) : null;
         }
 
         public override void ViewClick()
@@ -58,8 +58,8 @@ namespace YARG.Menu.History
             if (SettingsManager.Settings.ShowEngineInconsistencyDialog)
             {
                 var dialog = DialogManager.Instance.ShowOneTimeMessage(
-                    LocaleHelper.LocalizeString("Dialogs.EngineInconsistency.Title"),
-                    LocaleHelper.LocalizeString("Dialogs.EngineInconsistency"),
+                    Localize.Key("Menu.Dialog.EngineInconsistency.Title"),
+                    Localize.Key("Menu.Dialog.EngineInconsistency.Description"),
                     () =>
                     {
                         SettingsManager.Settings.ShowEngineInconsistencyDialog = false;

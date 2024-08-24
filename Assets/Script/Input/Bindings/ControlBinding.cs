@@ -1,10 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.LowLevel;
-using UnityEngine.Localization;
 using YARG.Core.Input;
 using YARG.Core.Logging;
 using YARG.Input.Serialization;
@@ -41,9 +39,14 @@ namespace YARG.Input
         public event GameInputProcessed InputProcessed;
 
         /// <summary>
-        /// The name for this binding.
+        /// The unlocalized name for this binding.
         /// </summary>
-        public LocalizedString Name { get; }
+        public string Name { get; }
+
+        /// <summary>
+        /// The alternate unlocalized name for this binding, representing lefty-flip.
+        /// </summary>
+        public string NameLefty { get; }
 
         /// <summary>
         /// The key string for this binding.
@@ -65,7 +68,20 @@ namespace YARG.Input
         public ControlBinding(string name, int action)
         {
             Key = name;
-            Name = new("Bindings", name);
+
+            Name = name;
+            NameLefty = Name;
+
+            Action = action;
+        }
+
+        public ControlBinding(string name, string nameLefty, int action)
+        {
+            Key = name;
+
+            Name = name;
+            NameLefty = nameLefty;
+
             Action = action;
         }
 
@@ -83,6 +99,7 @@ namespace YARG.Input
         public abstract bool RemoveControl(InputControl control);
         public abstract bool ContainsControl(InputControl control);
 
+        public abstract bool ContainsBindingsForDevice(InputDevice device);
         public abstract void ClearBindingsForDevice(InputDevice device);
         public abstract void ClearAllBindings();
 
@@ -207,6 +224,10 @@ namespace YARG.Input
         public    IReadOnlyList<TBinding> Bindings => _bindings;
 
         public ControlBinding(string name, int action) : base(name, action)
+        {
+        }
+
+        public ControlBinding(string name, string nameLefty, int action) : base(name, nameLefty, action)
         {
         }
 
@@ -345,6 +366,23 @@ namespace YARG.Input
             }
 
             foundBinding = null;
+            return false;
+        }
+
+        public override bool ContainsBindingsForDevice(InputDevice device)
+        {
+            foreach (var binding in _bindings)
+            {
+                if (binding.Control.device == device)
+                    return true;
+            }
+
+            foreach (var serialized in _unresolvedBindings)
+            {
+                if (serialized.Device.MatchesDevice(device))
+                    return true;
+            }
+
             return false;
         }
 

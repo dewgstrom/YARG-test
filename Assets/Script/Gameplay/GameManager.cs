@@ -45,6 +45,8 @@ namespace YARG.Gameplay
         private ReplayController _replayController;
         [SerializeField]
         private PauseMenuManager _pauseMenu;
+        [SerializeField]
+        private DraggableHudManager _draggableHud;
 
         [SerializeField]
         private GameObject _lyricBar;
@@ -129,6 +131,8 @@ namespace YARG.Gameplay
         private bool _isShowDebugText;
         private bool _isReplaySaved;
 
+        private int _originalSleepTimeout;
+
         private StemMixer _mixer;
 
         private void Awake()
@@ -156,6 +160,10 @@ namespace YARG.Gameplay
 
             // Hide vocals track (will be shown when players are initialized
             VocalTrack.gameObject.SetActive(false);
+
+            // Prevent screen from sleeping
+            _originalSleepTimeout = Screen.sleepTimeout;
+            Screen.sleepTimeout = SleepTimeout.NeverSleep;
         }
 
         private void OnDestroy()
@@ -172,7 +180,7 @@ namespace YARG.Gameplay
                 GlobalAudioHandler.SetVolumeSetting(state.Key, state.Value.Volume);
             }
 
-            _pauseMenu.Clear();
+            _pauseMenu.PopAllMenus();
             _mixer?.Dispose();
             _songRunner?.Dispose();
             BeatEventHandler?.Unsubscribe(StarPowerClap);
@@ -180,6 +188,9 @@ namespace YARG.Gameplay
 
             // Reset the time scale back, as it would be 0 at this point (because of pausing)
             Time.timeScale = 1f;
+
+            // Reset sleep timeout setting
+            Screen.sleepTimeout = _originalSleepTimeout;
         }
 
         private void Update()
@@ -187,12 +198,10 @@ namespace YARG.Gameplay
             // Pause/unpause
             if (Keyboard.current.escapeKey.wasPressedThisFrame)
             {
-                if (IsPractice && !PracticeManager.HasSelectedSection)
+                if ((!IsPractice || PracticeManager.HasSelectedSection) && !DialogManager.Instance.IsDialogShowing)
                 {
-                    return;
+                    SetPaused(!_pauseMenu.IsOpen);
                 }
-
-                SetPaused(!_pauseMenu.IsOpen());
             }
 
             // Toggle debug text
@@ -211,7 +220,7 @@ namespace YARG.Gameplay
 
             // Update handlers
             _songRunner.Update();
-            BeatEventHandler.Update(_songRunner.RealSongTime);
+            BeatEventHandler.Update(_songRunner.SongTime);
 
             // Update players
             int totalScore = 0;
@@ -277,7 +286,24 @@ namespace YARG.Gameplay
                 text.AppendFormat("Speed multiplier: {0}\n", _songRunner.SyncSpeedMultiplier);
                 text.AppendFormat("Input base: {0:0.000000}\n", _songRunner.InputTimeBase);
                 text.AppendFormat("Input offset: {0:0.000000}\n", _songRunner.InputTimeOffset);
-                text.AppendFormat("Current venue call: {1:000}/{2:000}: {0}\n", MasterLightingController.CurrentLightingCue?.Type, MasterLightingGameplayMonitor.LightingIndex, MasterLightingGameplayMonitor.Venue.Lighting.Count);
+
+                // Explicit check instead of using ?, as nullable enum types are not specially
+                // formatted by ZString to avoid allocations (while non-nullable enums are)
+                if (MasterLightingController.CurrentLightingCue != null)
+                {
+                    text.AppendFormat("Current venue call: {0:000}/{1:000}: {2}\n",
+                        MasterLightingGameplayMonitor.LightingIndex,
+                        MasterLightingGameplayMonitor.Venue.Lighting.Count,
+                        MasterLightingController.CurrentLightingCue.Type
+                    );
+                }
+                else
+                {
+                    text.AppendFormat("Current venue call: {0:000}/{1:000}: None\n",
+                        MasterLightingGameplayMonitor.LightingIndex,
+                        MasterLightingGameplayMonitor.Venue.Lighting.Count
+                    );
+                }
 
                 _debugText.SetText(text);
             }
@@ -345,11 +371,19 @@ namespace YARG.Gameplay
             Time.timeScale = 0f;
             BackgroundManager.SetPaused(true);
             GameStateFetcher.SetPaused(true);
+
+            // Allow sleeping
+            Screen.sleepTimeout = _originalSleepTimeout;
         }
 
         public void Resume(bool inputCompensation = true)
         {
-            _pauseMenu.Clear();
+            if (_draggableHud.EditMode)
+            {
+                SetEditHUD(false);
+            }
+
+            _pauseMenu.PopAllMenus();
             if (_songRunner.SongTime >= SongLength + SONG_END_DELAY)
             {
                 return;
@@ -361,6 +395,9 @@ namespace YARG.Gameplay
             Time.timeScale = 1f;
             BackgroundManager.SetPaused(false);
             GameStateFetcher.SetPaused(false);
+
+            // Disallow sleeping
+            Screen.sleepTimeout = SleepTimeout.NeverSleep;
 
             _isReplaySaved = false;
 
@@ -398,8 +435,6 @@ namespace YARG.Gameplay
             if (IsPractice)
             {
                 PracticeManager.ResetPractice();
-                // Audio is paused automatically at this point, so we need to start it again
-                _mixer.Play();
                 return false;
             }
 
@@ -419,6 +454,7 @@ namespace YARG.Gameplay
             {
                 PlayerScores = _players.Select(player => new PlayerScoreCard
                 {
+                    IsHighScore = player.Score > player.LastHighScore,
                     Player = player.Player,
                     Stats = player.BaseStats
                 }).ToArray(),
@@ -498,6 +534,20 @@ namespace YARG.Gameplay
             GlobalVariables.Instance.LoadScene(SceneIndex.Menu);
         }
 
+        public void SetEditHUD(bool on)
+        {
+            if (on)
+            {
+                _pauseMenu.gameObject.SetActive(false);
+                _draggableHud.SetEditHUD(true);
+            }
+            else
+            {
+                _draggableHud.SetEditHUD(false);
+                _pauseMenu.gameObject.SetActive(true);
+            }
+        }
+
         public (string Name, HashWrapper Hash)? SaveReplay(double length, bool useScorePath)
         {
             var realPlayers = _players.Where(player => !player.Player.Profile.IsBot).ToList();
@@ -537,12 +587,10 @@ namespace YARG.Gameplay
             {
                 // Pause
                 case MenuAction.Start:
-                    if (IsPractice && !PracticeManager.HasSelectedSection)
+                    if ((!IsPractice || PracticeManager.HasSelectedSection) && !DialogManager.Instance.IsDialogShowing)
                     {
-                        return;
+                        SetPaused(!_songRunner.Paused);
                     }
-
-                    SetPaused(!_songRunner.Paused);
                     break;
             }
         }

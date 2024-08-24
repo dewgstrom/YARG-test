@@ -1,9 +1,11 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using YARG.Core.Chart;
 using YARG.Core.Input;
 using YARG.Menu.Navigation;
+using YARG.Settings;
 
 namespace YARG.Gameplay.HUD
 {
@@ -16,6 +18,7 @@ namespace YARG.Gameplay.HUD
 
         private bool _navigationPushed;
         private bool _hasSelectedSections;
+        private bool _allowWrapAround;
 
         private List<Section> _sections;
         public IReadOnlyList<Section> Sections => _sections;
@@ -35,7 +38,25 @@ namespace YARG.Gameplay.HUD
             get => _hoveredIndex;
             private set
             {
-                _hoveredIndex = Mathf.Clamp(value, 0, _sections.Count - 1);
+                if (_allowWrapAround)
+                {
+                    if (value > _sections.Count - 1)
+                    {
+                        _hoveredIndex = 0;
+                    }
+                    else if (value < 0)
+                    {
+                        _hoveredIndex = _sections.Count - 1;
+                    }
+                    else
+                    {
+                        _hoveredIndex = value;
+                    }
+                }
+                else
+                {
+                     _hoveredIndex = Mathf.Clamp(value, 0, _sections.Count - 1);
+                }
 
                 UpdateSectionViews();
             }
@@ -121,10 +142,16 @@ namespace YARG.Gameplay.HUD
 
             Navigator.Instance.PushScheme(new NavigationScheme(new()
             {
-                new NavigationScheme.Entry(MenuAction.Green, "Confirm", Confirm),
-                new NavigationScheme.Entry(MenuAction.Red, "Back", Back),
-                new NavigationScheme.Entry(MenuAction.Up, "Up", Up),
-                new NavigationScheme.Entry(MenuAction.Down, "Down", Down)
+                new NavigationScheme.Entry(MenuAction.Green, "Menu.Common.Confirm", Confirm),
+                new NavigationScheme.Entry(MenuAction.Red, "Menu.Common.Back", Back),
+                new NavigationScheme.Entry(MenuAction.Up, "Menu.Common.Up", ctx => {
+                    _allowWrapAround = !ctx.IsRepeat && SettingsManager.Settings.WrapAroundNavigation.Value;
+                    HoveredIndex--;
+                }),
+                new NavigationScheme.Entry(MenuAction.Down, "Menu.Common.Down", ctx => {
+                    _allowWrapAround = !ctx.IsRepeat && SettingsManager.Settings.WrapAroundNavigation.Value;
+                    HoveredIndex++;
+                })
             }, false));
 
 
@@ -169,20 +196,10 @@ namespace YARG.Gameplay.HUD
                 else
                 {
                     // Go back to practice pause menu
-                    _pauseMenuManager.PopMenu(false);
+                    _pauseMenuManager.PopMenu();
                     _pauseMenuManager.PushMenu(PauseMenuManager.Menu.PracticePause);
                 }
             }
-        }
-
-        private void Up()
-        {
-            HoveredIndex--;
-        }
-
-        private void Down()
-        {
-            HoveredIndex++;
         }
 
         private void Update()

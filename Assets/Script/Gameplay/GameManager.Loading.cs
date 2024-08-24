@@ -13,6 +13,7 @@ using YARG.Core.Replays;
 using YARG.Gameplay.Player;
 using YARG.Menu.Navigation;
 using YARG.Menu.Persistent;
+using YARG.Menu.Settings;
 using YARG.Playback;
 using YARG.Player;
 using YARG.Replays;
@@ -133,7 +134,11 @@ namespace YARG.Gameplay
 
             if (_loadState == LoadFailureState.Rescan)
             {
-                ToastManager.ToastWarning("Chart requires a rescan!");
+                ToastManager.ToastWarning("Chart requires a rescan!", () =>
+                {
+                    SettingsMenu.Instance.gameObject.SetActive(true);
+                    SettingsMenu.Instance.SelectTabByName("SongManager");
+                });
 
                 global.LoadScene(SceneIndex.Menu);
                 return;
@@ -150,11 +155,16 @@ namespace YARG.Gameplay
 
             FinalizeChart();
 
+            // Get audio calibration
+            int audioCalibration = SettingsManager.Settings.AudioCalibration.Value;
+            if (SettingsManager.Settings.AccountForHardwareLatency.Value)
+                audioCalibration += GlobalAudioHandler.PlaybackLatency;
+
             // Initialize song runner
             _songRunner = new SongRunner(
                 _mixer,
                 GlobalVariables.State.SongSpeed,
-                SettingsManager.Settings.AudioCalibration.Value,
+                audioCalibration,
                 SettingsManager.Settings.VideoCalibration.Value,
                 Song.SongOffsetSeconds);
 
@@ -182,7 +192,8 @@ namespace YARG.Gameplay
 
             // TODO: Move the offset here to SFX configuration
             // The clap SFX has 20 ms of lead-up before the actual impact happens
-            BeatEventHandler.Subscribe(StarPowerClap, -0.02);
+            // Must be offset by audio calibration to account for playback delay
+            BeatEventHandler.Subscribe(StarPowerClap, -0.02 + _songRunner.AudioCalibration);
 
             // Log constant values
             YargLogger.LogFormatDebug("Audio calibration: {0}, video calibration: {1}, song offset: {2}",
@@ -335,6 +346,10 @@ namespace YARG.Gameplay
                     player.SetPresetsFromProfile();
                 }
 
+                var lastHighScore = ScoreContainer
+                    .GetHighScoreByInstrument(Song.Hash, player.Profile.CurrentInstrument)?
+                    .Score;
+
                 if (player.Profile.GameMode != GameMode.Vocals)
                 {
                     var prefab = player.Profile.GameMode switch
@@ -357,8 +372,7 @@ namespace YARG.Gameplay
                     // Setup player
                     var trackPlayer = playerObject.GetComponent<TrackPlayer>();
                     var trackView = _trackViewManager.CreateTrackView(trackPlayer, player);
-                    var currentHighScore = ScoreContainer.GetHighScoreByInstrument(Song.Hash, player.Profile.CurrentInstrument)?.Score;
-                    trackPlayer.Initialize(index, player, Chart, trackView, _mixer, currentHighScore);
+                    trackPlayer.Initialize(index, player, Chart, trackView, _mixer, lastHighScore);
                     _players.Add(trackPlayer);
                 }
                 else
@@ -383,7 +397,7 @@ namespace YARG.Gameplay
                     // Create the player on the vocal track
                     var vocalsPlayer = VocalTrack.CreatePlayer();
                     var playerHud = _trackViewManager.CreateVocalsPlayerHUD();
-                    vocalsPlayer.Initialize(index, player, Chart, playerHud);
+                    vocalsPlayer.Initialize(index, player, Chart, playerHud, lastHighScore);
                     _players.Add(vocalsPlayer);
                 }
 

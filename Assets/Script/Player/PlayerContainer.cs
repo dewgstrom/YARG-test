@@ -1,14 +1,18 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Newtonsoft.Json;
-using UnityEngine;
 using UnityEngine.InputSystem;
+using YARG.Core;
 using YARG.Core.Game;
 using YARG.Core.Logging;
 using YARG.Helpers;
 using YARG.Input;
 using YARG.Input.Bindings;
+using YARG.Menu.MusicLibrary;
+using YARG.Settings;
+using YARG.Song;
 
 namespace YARG.Player
 {
@@ -39,6 +43,11 @@ namespace YARG.Player
         /// </summary>
         public static IReadOnlyList<YargPlayer> Players => _players;
 
+        /// <summary>
+        /// An enumerator over the list of all of the active players.
+        /// </summary>
+        public static List<YargPlayer>.Enumerator PlayerEnumerator => _players.GetEnumerator();
+
         private static bool _isInitialized;
 
         static PlayerContainer()
@@ -56,6 +65,7 @@ namespace YARG.Player
 
             _profiles.Add(profile);
             _profilesById.Add(profile.Id, profile);
+            ResetPlayableSongs();
             return true;
         }
 
@@ -68,6 +78,7 @@ namespace YARG.Player
 
             _profiles.Remove(profile);
             _profilesById.Remove(profile.Id);
+            ResetPlayableSongs();
             return true;
         }
 
@@ -92,7 +103,7 @@ namespace YARG.Player
             player.EnableInputs();
             _players.Add(player);
             _playersByProfile.Add(profile, player);
-
+            ResetPlayableSongs();
             return player;
         }
 
@@ -104,7 +115,7 @@ namespace YARG.Player
             _playersByProfile.Remove(player.Profile);
 
             player.Dispose();
-
+            ResetPlayableSongs();
             return true;
         }
 
@@ -119,8 +130,16 @@ namespace YARG.Player
 
             var bindings = BindingsContainer.GetBindingsForProfile(newProfile);
             player.SwapToProfile(newProfile, bindings, true);
-
+            ResetPlayableSongs();
             return true;
+        }
+
+        private static void ResetPlayableSongs()
+        {
+            if (SettingsManager.Settings.LibrarySort == SortAttribute.Playable)
+            {
+                MusicLibraryMenu.SetReload(MusicLibraryReloadState.Full);
+            }
         }
 
         public static YargPlayer GetPlayerFromProfile(YargProfile profile)

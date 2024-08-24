@@ -41,14 +41,7 @@ namespace YARG.Audio.BASS
                 YargLogger.LogFormatError("Failed to create split stream: {0}!", Bass.LastError);
                 return null;
             }
-
-            var handle = new StreamHandle(BassFx.TempoCreate(streamSplit, tempoFlags));
-            handle.CompressorFX = BassHelpers.AddCompressorToChannel(handle.Stream);
-            if (handle.CompressorFX == 0)
-            {
-                YargLogger.LogError("Failed to set up compressor for split stream!");
-            }
-            return handle;
+            return new StreamHandle(BassFx.TempoCreate(streamSplit, tempoFlags));
         }
 
         private bool _disposed;
@@ -101,7 +94,7 @@ namespace YARG.Audio.BASS
 
         protected override ReadOnlySpan<string> SupportedFormats => FORMATS;
 
-        private int _opusHandle = 0;
+        private readonly int _opusHandle = 0;
 
         public BassAudioManager()
         {
@@ -115,8 +108,9 @@ namespace YARG.Audio.BASS
             Bass.Configure(Configuration.IncludeDefaultDevice, true);
 
             Bass.UpdatePeriod = 5;
-            Bass.PlaybackBufferLength = BassHelpers.PLAYBACK_BUFFER_LENGTH;
+            //Bass.PlaybackBufferLength = BassHelpers.PLAYBACK_BUFFER_LENGTH;
             Bass.DeviceNonStop = true;
+            Bass.AsyncFileBufferLength = 65536;
 
             // This not the same as Bass.UpdatePeriod
             // If not explicitly set by the audio driver or OS, the default will be 10
@@ -128,10 +122,10 @@ namespace YARG.Audio.BASS
             Bass.DeviceBufferLength = 2 * devPeriod;
 
             // Affects Windows only. Forces device names to be in UTF-8 on Windows rather than ANSI.
-            Bass.Configure(Configuration.UnicodeDeviceInformation, true);
-            Bass.Configure(Configuration.TruePlayPosition, false);
-            Bass.Configure(Configuration.UpdateThreads, Environment.ProcessorCount);
-            Bass.Configure(Configuration.FloatDSP, true);
+            Bass.UnicodeDeviceInformation = true;
+            Bass.FloatingPointDSP = true;
+            Bass.VistaTruePlayPosition = false;
+            Bass.UpdateThreads = GlobalAudioHandler.MAX_THREADS;
 
             // Undocumented BASS_CONFIG_MP3_OLDGAPS config.
             Bass.Configure((Configuration) 68, 1);
@@ -154,7 +148,10 @@ namespace YARG.Audio.BASS
 
             LoadSfx();
 
-            PlaybackLatency = Bass.Info.Latency + Bass.DeviceBufferLength +  devPeriod;
+            var info = Bass.Info;
+            PlaybackLatency = info.Latency + Bass.DeviceBufferLength + devPeriod;
+            MinimumBufferLength = info.MinBufferLength + Bass.UpdatePeriod;
+            MaximumBufferLength = 5000;
 
             YargLogger.LogInfo("BASS Successfully Initialized");
             YargLogger.LogFormatInfo("BASS: {0} - BASS.FX: {1} - BASS.Mix: {2}", Bass.Version, BassFx.Version, BassMix.Version);
@@ -166,26 +163,22 @@ namespace YARG.Audio.BASS
 #nullable enable
         protected override StemMixer? CreateMixer(string name, float speed, double mixerVolume, bool clampStemVolume)
         {
-            const int ASYNCFILEBUFFER_SINGLE = 0xFFFF;
             YargLogger.LogDebug("Loading song");
             if (!CreateMixerHandle(out int handle))
             {
                 return null;
             }
-            Bass.AsyncFileBufferLength = ASYNCFILEBUFFER_SINGLE;
             return new BassStemMixer(name, this, speed, mixerVolume, handle, 0, clampStemVolume);
         }
 
         protected override StemMixer? CreateMixer(string name, Stream stream, float speed, double mixerVolume, bool clampStemVolume)
         {
-            const int ASYNCFILEBUFFER_MULTI = 8 * 0xFFFF;
             YargLogger.LogDebug("Loading song");
             if (!CreateMixerHandle(out int handle))
             {
                 return null;
             }
 
-            Bass.AsyncFileBufferLength = ASYNCFILEBUFFER_MULTI;
             if (!CreateSourceStream(stream, out int sourceStream))
             {
                 return null;
@@ -280,7 +273,7 @@ namespace YARG.Audio.BASS
                             YargLogger.LogFormatInfo("Loaded {0}", sfxFile);
                         }
                         break;
-                    }  
+                    }
                 }
             }
 
@@ -295,6 +288,16 @@ namespace YARG.Audio.BASS
 #endif
             Bass.GlobalStreamVolume = (int) (10_000 * volume);
             Bass.GlobalSampleVolume = (int) (10_000 * volume);
+        }
+
+        protected override void ToggleBuffer_Internal(bool enable)
+        {
+            // Nothing
+        }
+
+        protected override void SetBufferLength_Internal(int length)
+        {
+            Bass.PlaybackBufferLength = length;
         }
 
         protected override void DisposeUnmanagedResources()
@@ -337,35 +340,19 @@ namespace YARG.Audio.BASS
 
         private static bool CreateMixerHandle(out int mixerHandle)
         {
-            mixerHandle = BassMix.CreateMixerStream(44100, 2, BassFlags.Default);
+            // The float flag allows >0dB signals.
+            // Note that the compressor attempts to normalize signals >-2dB, but some mixes will pierce through.
+            mixerHandle = BassMix.CreateMixerStream(44100, 2, BassFlags.Float);
             if (mixerHandle == 0)
             {
                 YargLogger.LogFormatError("Failed to create mixer: {0}!", Bass.LastError);
                 return false;
             }
 
-            int threads = Environment.ProcessorCount switch
+            int compressorFX = BassHelpers.AddCompressorToChannel(mixerHandle);
+            if (compressorFX == 0)
             {
-                >= 16 => 16,
-                >= 4 => Environment.ProcessorCount / 2,
-                _ => 2
-            };
-
-            // Mixer processing threads (for some reason this attribute is undocumented in ManagedBass?)
-            // https://www.un4seen.com/forum/?topic=19491.msg136328#msg136328
-            if (!Bass.ChannelSetAttribute(mixerHandle, (ChannelAttribute) 86017, threads))
-            {
-                YargLogger.LogFormatError("Failed to set mixer processing threads: {0}!", Bass.LastError);
-                Bass.StreamFree(mixerHandle);
-                return false;
-            }
-
-            // We specify sourcestreams to use AsyncFile behavior
-            // That should ensure we still data buffer for use, but in a way that shouldn't effect latency
-            if (!Bass.ChannelSetAttribute(mixerHandle, ChannelAttribute.Buffer, 0))
-            {
-                YargLogger.LogFormatError("Failed to remove playback buffer: {0}!", Bass.LastError);
-                return false;
+                YargLogger.LogError("Failed to set up compressor for mixer stream!");
             }
             return true;
         }
@@ -376,13 +363,29 @@ namespace YARG.Audio.BASS
             // as it was made as part of an update to fix <= 8 channel oggs.
             // https://www.un4seen.com/forum/?topic=20148.msg140872#msg140872
             const BassFlags streamFlags = BassFlags.Prescan | BassFlags.Decode | BassFlags.AsyncFile | (BassFlags) 64;
-            
+
             streamHandle = Bass.CreateStream(StreamSystem.NoBuffer, streamFlags, new BassStreamProcedures(stream));
             if (streamHandle == 0)
             {
                 YargLogger.LogFormatError("Failed to create source stream: {0}!", Bass.LastError);
                 return false;
             }
+            return true;
+        }
+
+        internal static bool GetSpeed(int streamHandle, out float speed)
+        {
+            if (!Bass.ChannelGetAttribute(streamHandle, ChannelAttribute.Tempo, out float relativeSpeed))
+            {
+                speed = 0;
+                YargLogger.LogFormatError("Failed to get channel speed: {0}", Bass.LastError);
+                return false;
+            }
+
+            // Turn relative speed into percentage speed
+            float percentageSpeed = relativeSpeed + 100;
+            speed = percentageSpeed / 100;
+
             return true;
         }
 
@@ -486,6 +489,18 @@ namespace YARG.Audio.BASS
             }
 
             return seconds;
+        }
+
+        private const double BASE = 2;
+        private const double FACTOR = BASE - 1;
+        internal static double ExponentialVolume(double volume)
+        {
+            return (Math.Pow(BASE, volume) - 1) / FACTOR;
+        }
+
+        internal static double LogarithmicVolume(double volume)
+        {
+            return Math.Log(FACTOR * volume + 1, BASE);
         }
     }
 }

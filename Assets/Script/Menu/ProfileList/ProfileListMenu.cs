@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using YARG.Core;
 using YARG.Core.Game;
 using YARG.Core.Input;
@@ -29,7 +29,7 @@ namespace YARG.Menu.ProfileList
 
             Navigator.Instance.PushScheme(new NavigationScheme(new()
             {
-                new NavigationScheme.Entry(MenuAction.Red, "Back", () => MenuManager.Instance.PopMenu()),
+                new NavigationScheme.Entry(MenuAction.Red, "Menu.Common.Back", () => MenuManager.Instance.PopMenu()),
             }, true));
         }
 
@@ -67,6 +67,7 @@ namespace YARG.Menu.ProfileList
                 NoteSpeed = 5,
                 HighwayLength = 1,
                 GameMode = GameMode.FiveFretGuitar,
+                AutoConnect = false,
             });
 
             RefreshList();

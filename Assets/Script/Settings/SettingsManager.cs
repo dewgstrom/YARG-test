@@ -1,10 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using Newtonsoft.Json;
-using UnityEngine;
 using YARG.Core.Logging;
+using YARG.Core.Utility;
 using YARG.Helpers;
 using YARG.Settings.Metadata;
 using YARG.Settings.Types;
@@ -13,6 +14,16 @@ namespace YARG.Settings
 {
     public static partial class SettingsManager
     {
+        private static readonly JsonSerializerSettings JsonSettings = new()
+        {
+            Formatting = Formatting.Indented,
+            Converters = new List<JsonConverter>
+            {
+                new JsonColorConverter(),
+                new JsonVector2Converter()
+            }
+        };
+
         public static SettingContainer Settings { get; private set; }
 
         public static readonly List<Tab> DisplayedSettingsTabs = new()
@@ -23,18 +34,27 @@ namespace YARG.Settings
                 new ButtonRowMetadata(nameof(Settings.OpenCalibrator)),
                 nameof(Settings.AudioCalibration),
                 nameof(Settings.VideoCalibration),
+                nameof(Settings.AccountForHardwareLatency),
 
                 new HeaderMetadata("Venues"),
                 new ButtonRowMetadata(nameof(Settings.OpenVenueFolder)),
                 nameof(Settings.DisableGlobalBackgrounds),
                 nameof(Settings.DisablePerSongBackgrounds),
 
+                new HeaderMetadata("StatusBar"),
+                nameof(Settings.ShowBattery),
+                nameof(Settings.ShowTime),
+                nameof(Settings.MemoryStats),
+                nameof(Settings.FpsStats),
+
                 new HeaderMetadata("Other"),
+                nameof(Settings.ReconnectProfiles),
                 nameof(Settings.UseCymbalModelsInFiveLane),
                 nameof(Settings.KickBounceMultiplier),
                 nameof(Settings.ShowCursorTimer),
                 nameof(Settings.PauseOnDeviceDisconnect),
                 nameof(Settings.PauseOnFocusLoss),
+                nameof(Settings.WrapAroundNavigation),
                 nameof(Settings.AmIAwesome),
             },
             new SongManagerTab("SongManager", icon: "Songs")
@@ -63,6 +83,10 @@ namespace YARG.Settings
                 nameof(Settings.MusicPlayerVolume),
                 nameof(Settings.VocalMonitoring),
 
+                new HeaderMetadata("Customization"),
+                nameof(Settings.EnablePlaybackBuffer),
+                nameof(Settings.PlaybackBufferLength),
+
                 new HeaderMetadata("Input"),
                 nameof(Settings.MicrophoneSensitivity),
 
@@ -73,8 +97,10 @@ namespace YARG.Settings
                 // nameof(Settings.WhammyPitchShiftAmount),
                 // nameof(Settings.WhammyOversampleFactor),
                 nameof(Settings.ClapsInStarpower),
+                nameof(Settings.OverstrumAndOverhitSoundEffects),
                 // nameof(Settings.ReverbInStarpower),
                 nameof(Settings.UseChipmunkSpeed),
+                nameof(Settings.ApplyVolumesInMusicLibrary),
             },
             new MetadataTab("Graphics", icon: "Display", new TrackPreviewBuilder())
             {
@@ -93,6 +119,7 @@ namespace YARG.Settings
                 new HeaderMetadata("Other"),
                 nameof(Settings.ShowHitWindow),
                 nameof(Settings.DisableTextNotifications),
+                nameof(Settings.EnablePracticeSP),
                 nameof(Settings.NoteStreakFrequency),
                 nameof(Settings.LyricDisplay),
                 nameof(Settings.SongTimeOnScoreBox),
@@ -125,20 +152,43 @@ namespace YARG.Settings
                 new HeaderMetadata("LightingGeneral"),
                 nameof(Settings.StageKitEnabled),
                 nameof(Settings.DMXEnabled),
-                new HeaderMetadata("DMXChannels"),
+                nameof(Settings.RB3EEnabled),
+                new HeaderMetadata("StageKitDMXChannels"),
                 nameof(Settings.DMXDimmerChannels),
-                nameof(Settings.DMXCueChangeChannel),
                 nameof(Settings.DMXRedChannels),
                 nameof(Settings.DMXGreenChannels),
                 nameof(Settings.DMXBlueChannels),
                 nameof(Settings.DMXYellowChannels),
-                nameof(Settings.DMXFogChannel),
-                nameof(Settings.DMXStrobeChannel),
+                nameof(Settings.DMXFogChannels),
+                nameof(Settings.DMXStrobeChannels),
+                new HeaderMetadata("AdvancedDMXChannels"),
+                nameof(Settings.DMXCueChangeChannel),
+                nameof(Settings.DMXPostProcessingChannel),
+                nameof(Settings.DMXKeyframeChannel),
+                nameof(Settings.DMXBeatlineChannel),
+                nameof(Settings.DMXBonusEffectChannel),
+                nameof(Settings.DMXDrumsChannel),
+                nameof(Settings.DMXGuitarChannel),
+                nameof(Settings.DMXBassChannel),
+                nameof(Settings.DMXKeysChannel),
+                new HeaderMetadata("AdvancedDMXSettings"),
+                nameof(Settings.DMXUniverseChannel),
+                nameof(Settings.DMXDimmerValues),
+                //NYI
+                //nameof(Settings.DMXPerformerChannel)
+                new HeaderMetadata("RB3E"),
+                nameof(Settings.RB3EBroadcastIP),
+
             },
             new MetadataTab("Debug", icon: "Debug")
             {
                 nameof(Settings.InputDeviceLogging),
-                nameof(Settings.ShowAdvancedMusicLibraryOptions)
+                nameof(Settings.ShowAdvancedMusicLibraryOptions),
+            },
+            new MetadataTab("Experimental", icon: "Beaker", new ExperimentalPreviewBuilder())
+            {
+                new HeaderMetadata("Other"),
+                // Add experimental settings here
             }
         };
 
@@ -154,7 +204,8 @@ namespace YARG.Settings
             // Create settings container
             try
             {
-                Settings = JsonConvert.DeserializeObject<SettingContainer>(File.ReadAllText(SettingsFile));
+                string text = File.ReadAllText(SettingsFile);
+                Settings = JsonConvert.DeserializeObject<SettingContainer>(text, JsonSettings);
             }
             catch (Exception e)
             {
@@ -186,7 +237,8 @@ namespace YARG.Settings
             // (such as closing the game before they load)
             if (SettingContainer.IsInitialized && Settings is not null)
             {
-                File.WriteAllText(SettingsFile, JsonConvert.SerializeObject(Settings, Formatting.Indented));
+                var json = JsonConvert.SerializeObject(Settings, JsonSettings);
+                File.WriteAllText(SettingsFile, json);
             }
         }
 

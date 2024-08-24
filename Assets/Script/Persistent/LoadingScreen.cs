@@ -1,11 +1,17 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using Cysharp.Threading.Tasks;
 using TMPro;
 using UnityEngine;
+using YARG.Core.Game;
 using YARG.Core.Logging;
+using YARG.Integration;
+using YARG.Localization;
 using YARG.Menu.Navigation;
+using YARG.Menu.Persistent;
+using YARG.Player;
+using YARG.Settings;
 using YARG.Song;
 
 namespace YARG
@@ -20,7 +26,28 @@ namespace YARG
         private async void Start()
         {
             using var context = new LoadingContext();
-            context.SetLoadingText("Loading song sources...");
+
+            // Load language
+            try
+            {
+                await LocalizationManager.LoadLanguage(context);
+            }
+            catch (Exception e)
+            {
+                YargLogger.LogException(e);
+            }
+
+            // Load Discord right after (this requires localization)
+            try
+            {
+                DiscordController.Instance.Initialize();
+            }
+            catch (Exception e)
+            {
+                YargLogger.LogException(e);
+            }
+
+            // Load song sources and icons
             try
             {
                 await SongSources.LoadSources(context);
@@ -32,6 +59,37 @@ namespace YARG
 
             // Fast scan (cache read) on startup
             await SongContainer.RunRefresh(true, context);
+
+            // TODO: This should probably be moved out of the load manager
+            // If we want to reconnect profiles
+            if (SettingsManager.Settings.ReconnectProfiles.Value)
+            {
+                // Try to connect any profile that has AutoConnect true
+                foreach (var profile in PlayerContainer.Profiles.Where(p => p.AutoConnect))
+                {
+                    ConnectToProfile(profile);
+                }
+            }
+            else
+            {
+                // Otherwise clear the AutoConnect (to match what would be currently connected)
+                foreach (var profile in PlayerContainer.Profiles)
+                {
+                    profile.AutoConnect = false;
+                }
+            }
+        }
+
+        private static void ConnectToProfile(YargProfile profile)
+        {
+            // Create player from profile
+            var player = PlayerContainer.CreatePlayerFromProfile(profile, true);
+            // If we not were successful in creating a player
+            if (player is null)
+            {
+                // Then something went wrong, we were unable to connect to the profile.
+                ToastManager.ToastWarning($"Unable to connect to profile {profile.Name}.");
+            }
         }
     }
 

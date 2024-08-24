@@ -8,13 +8,18 @@ namespace YARG.Menu.MusicLibrary
     {
         public override BackgroundType Background => BackgroundType.Category;
 
+        public override bool UseWiderPrimaryText => true;
+
         public readonly string HeaderText;
+        public readonly string ShortcutName;
         private readonly int _songCount;
 
-        public SortHeaderViewType(string headerText, int songCount)
+        public SortHeaderViewType(string headerText, int songCount, string shortcutName)
         {
             HeaderText = headerText;
             _songCount = songCount;
+            
+            ShortcutName = shortcutName;
         }
 
         public override string GetPrimaryText(bool selected)
@@ -27,9 +32,11 @@ namespace YARG.Menu.MusicLibrary
             return CreateSongCountString(_songCount);
         }
 
-        public override async UniTask<Sprite> GetIcon()
+#nullable enable
+        public override Sprite? GetIcon()
+#nullable disable
         {
-            return await Addressables.LoadAssetAsync<Sprite>("MusicLibraryIcons[Down]").ToUniTask();
+            return Addressables.LoadAssetAsync<Sprite>("MusicLibraryIcons[Down]").WaitForCompletion();
         }
     }
 }

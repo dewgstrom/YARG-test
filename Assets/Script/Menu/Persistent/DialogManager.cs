@@ -1,5 +1,7 @@
 using System;
+using Cysharp.Threading.Tasks;
 using UnityEngine;
+using YARG.Localization;
 using YARG.Menu.Data;
 using YARG.Menu.Dialogs;
 
@@ -17,6 +19,8 @@ namespace YARG.Menu.Persistent
         private OneTimeMessageDialog _oneTimeMessagePrefab;
         [SerializeField]
         private ListDialog _listPrefab;
+        [SerializeField]
+        private ListWithSettingsDialog _listWithSettingsPrefab;
         [SerializeField]
         private RenameDialog _renameDialog;
         [SerializeField]
@@ -59,7 +63,7 @@ namespace YARG.Menu.Persistent
             dialog.DontShowAgainAction = dontShowAgainAction;
 
             dialog.ClearButtons();
-            dialog.AddDialogButton("I Understand", MenuData.Colors.ConfirmButton, ClearDialog);
+            dialog.AddDialogButton("Menu.Dialog.AntiPiracy.Confirm", MenuData.Colors.ConfirmButton, ClearDialog);
 
             return dialog;
         }
@@ -71,6 +75,19 @@ namespace YARG.Menu.Persistent
         public ListDialog ShowList(string title)
         {
             var dialog = ShowDialog(_listPrefab);
+
+            dialog.Title.text = title;
+
+            return dialog;
+        }
+
+        /// <summary>
+        /// Displays and returns a list dialog with configurable settings.
+        /// </summary>
+        /// <inheritdoc cref="ShowDialog{ListWithSettingsDialog}(ListWithSettingsDialog)"/>
+        public ListWithSettingsDialog ShowListWithSettings(string title)
+        {
+            var dialog = ShowDialog(_listWithSettingsPrefab);
 
             dialog.Title.text = title;
 
@@ -90,8 +107,8 @@ namespace YARG.Menu.Persistent
             dialog.RenameAction = renameAction;
 
             dialog.ClearButtons();
-            dialog.AddDialogButton("Cancel", MenuData.Colors.CancelButton, ClearDialog);
-            dialog.AddDialogButton("Confirm", MenuData.Colors.ConfirmButton, SubmitAndClearDialog);
+            dialog.AddDialogButton("Menu.Common.Cancel", MenuData.Colors.CancelButton, ClearDialog);
+            dialog.AddDialogButton("Menu.Common.Confirm", MenuData.Colors.ConfirmButton, SubmitAndClearDialog);
 
             return dialog;
         }
@@ -109,8 +126,8 @@ namespace YARG.Menu.Persistent
             dialog.DeleteAction = deleteAction;
 
             dialog.ClearButtons();
-            dialog.AddDialogButton("Cancel", MenuData.Colors.BrightButton, ClearDialog);
-            dialog.AddDialogButton("Delete", MenuData.Colors.CancelButton, () => _currentDialog.Submit());
+            dialog.AddDialogButton("Menu.Common.Cancel", MenuData.Colors.BrightButton, ClearDialog);
+            dialog.AddDialogButton("Menu.Common.Delete", MenuData.Colors.CancelButton, () => _currentDialog.Submit());
 
             return dialog;
         }
@@ -123,13 +140,13 @@ namespace YARG.Menu.Persistent
         {
             var dialog = ShowDialog(_colorPickerDialog);
 
-            dialog.Title.text = "Color Picker";
+            dialog.Title.text = Localize.Key("Menu.Dialog.ColorPicker.Title");
             dialog.Initialize(initialColor);
             dialog.ColorPickAction = colorPickAction;
 
             dialog.ClearButtons();
-            dialog.AddDialogButton("Cancel", MenuData.Colors.CancelButton, ClearDialog);
-            dialog.AddDialogButton("Apply", MenuData.Colors.ConfirmButton, () => _currentDialog.Submit());
+            dialog.AddDialogButton("Menu.Common.Cancel", MenuData.Colors.CancelButton, ClearDialog);
+            dialog.AddDialogButton("Menu.Common.Apply", MenuData.Colors.ConfirmButton, () => _currentDialog.Submit());
 
             return dialog;
         }
@@ -150,7 +167,7 @@ namespace YARG.Menu.Persistent
             _currentDialog = dialog;
 
             dialog.ClearButtons();
-            dialog.AddDialogButton("Close", MenuData.Colors.CancelButton, ClearDialog);
+            dialog.AddDialogButton("Menu.Common.Close", MenuData.Colors.CancelButton, ClearDialog);
 
             return dialog;
         }
@@ -179,6 +196,17 @@ namespace YARG.Menu.Persistent
         {
             _currentDialog.Submit();
             ClearDialog();
+        }
+
+        /// <summary>
+        /// Destroys the currently-displayed dialog.
+        /// </summary>
+        public UniTask WaitUntilCurrentClosed()
+        {
+            if (_currentDialog == null)
+                return UniTask.CompletedTask;
+
+            return _currentDialog.WaitUntilClosed();
         }
     }
 }
